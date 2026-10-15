@@ -1,0 +1,133 @@
+package com.paopao.hot.data.repo
+
+import com.paopao.hot.data.api.HotApi
+import com.paopao.hot.data.api.HotItemDto
+import com.paopao.hot.data.db.SnapshotDao
+import com.paopao.hot.data.db.SnapshotEntity
+import com.paopao.hot.data.model.PlatformDef
+import java.time.LocalDate
+
+/** UI 层用的热榜条目 */
+data class HotEntry(
+    val route: String,
+    val name: String,
+    val rank: Int,
+    val title: String,
+    val desc: String?,
+    val url: String?,
+    val hot: Double?
+)
+
+/** 周/月聚合条目：一条话题在周期内「上榜天数 / 最佳名次」 */
+data class AggregatedEntry(
+    val route: String,
+    val name: String,
+    val title: String,
+    val url: String?,
+    val daysOnBoard: Int,
+    val bestRank: Int,
+    val latestHot: Double?,
+    val lastSeenEpochDay: Long
+)
+
+class HotRepository(
+    private val apiProvider: () -> HotApi,
+    private val dao: SnapshotDao
+) {
+
+    /** 拉取单个平台并写入快照，返回是否成功 */
+    suspend fun refreshPlatform(platform: PlatformDef, day: Long): Boolean {
+        return try {
+            val resp = apiProvider().getHot(platform.route)
+            val items = resp.data.take(TOP_N)
+            val now = System.currentTimeMillis()
+            val entities = items.mapIndexed { index, dto ->
+                SnapshotEntity(
+                    route = platform.route,
+                    name = platform.name,
+                    dateEpochDay = day,
+                    rank = index + 1,
+                    title = dto.title.orEmpty().trim(),
+                    url = dto.mobileUrl ?: dto.url,
+                    hot = dto.hot,
+                    fetchedAt = now
+                )
+            }.filter { it.title.isNotEmpty() }
+            dao.upsertAll(entities)
+            true
+        } catch (t: Throwable) {
+            false
+        }
+    }
+
+    /** 刷新全部平台，返回 route -> 成功与否 */
+    suspend fun refreshAll(day: Long = todayEpochDay()): Map<String, Boolean> =
+        com.paopao.hot.data.model.PLATFORMS.associate { it.route to refreshPlatform(it, day) }
+
+    /** 今日榜（读本地快照，需先 refresh） */
+    suspend fun today(route: String): List<HotEntry> {
+        val day = todayEpochDay()
+        return dao.getDay(route, day).map { it.toEntry() }
+    }
+
+    /**
+     * 周/月聚合榜：对 [fromDay, today] 区间内的快照按标题去重聚合，
+     * 排序规则：上榜天数多者优先，其次看最新热度。
+     */
+    suspend fun aggregated(route: String, fromDay: Long): List<AggregatedEntry> {
+        val today = todayEpochDay()
+        val rows = dao.getRange(fromDay, today).filter { it.route == route }
+        return rows
+            .groupBy { it.title }
+            .map { (_, list) ->
+                val latest = list.maxBy { it.dateEpochDay }
+                AggregatedEntry(
+                    route = latest.route,
+                    name = latest.name,
+                    title = latest.title,
+                    url = latest.url,
+                    daysOnBoard = list.map { it.dateEpochDay }.distinct().size,
+                    bestRank = list.minOf { it.rank },
+                    latestHot = latest.hot,
+                    lastSeenEpochDay = latest.dateEpochDay
+                )
+            }
+            .sortedWith(
+                compareByDescending<AggregatedEntry> { it.daysOnBoard }
+                    .thenByDescending { it.latestHot ?: Double.MIN_VALUE }
+            )
+            .take(TOP_N)
+    }
+
+    suspend fun lastSyncAt(): Long? = dao.lastSyncAt()
+    suspend fun earliestDay(): Long? = dao.earliestDay()
+    suspend fun clearAll() = dao.clearAll()
+
+    /** 只保留最近 45 天快照，防止库无限膨胀 */
+    suspend fun trim() {
+        dao.trimBefore(todayEpochDay() - RETENTION_DAYS)
+    }
+
+    private fun SnapshotEntity.toEntry() = HotEntry(
+        route = route,
+        name = name,
+        rank = rank,
+        title = title,
+        desc = null,
+        url = url,
+        hot = hot
+    )
+
+    companion object {
+        const val TOP_N = 20
+        const val RETENTION_DAYS = 45L
+
+        fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
+
+        /** 本周榜起点：含今天的最近 7 天 */
+        fun weekStart(): Long = todayEpochDay() - 6
+
+        /** 本月榜起点：含今天的最近 30 天 */
+        fun monthStart(): Long = todayEpochDay() - 29
+    }
+}
