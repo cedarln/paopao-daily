@@ -20,17 +20,18 @@ class AppContainer(context: Context) {
     val db: AppDatabase = AppDatabase.build(context)
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     @Volatile
     private var currentBaseUrl: String = SettingsDefaults.BASE_URL
 
+    /** 主实例 + 备用实例，按顺序做故障转移 */
     @Volatile
-    private var api: HotApi = buildApi(currentBaseUrl)
+    private var apiList: List<HotApi> = buildApiList(currentBaseUrl)
 
-    val repository: HotRepository = HotRepository({ api }, db.snapshotDao())
+    val repository: HotRepository = HotRepository({ apiList }, db.snapshotDao())
 
     init {
         // 启动时读取用户自定义 API 地址（DataStore 首读很快，阻塞可接受）
@@ -39,7 +40,7 @@ class AppContainer(context: Context) {
                 val url = settingsStore.settings.first().baseUrl
                 if (url.isNotBlank()) {
                     currentBaseUrl = normalize(url)
-                    api = buildApi(currentBaseUrl)
+                    apiList = buildApiList(currentBaseUrl)
                 }
             } catch (_: Exception) {
                 // 保持默认
@@ -52,8 +53,14 @@ class AppContainer(context: Context) {
     fun updateBaseUrl(raw: String) {
         val normalized = normalize(raw)
         currentBaseUrl = normalized
-        api = buildApi(normalized)
+        apiList = buildApiList(normalized)
     }
+
+    /** 主实例排最前，备用实例去重后跟在后面 */
+    private fun buildApiList(primary: String): List<HotApi> =
+        (listOf(primary) + SettingsDefaults.FALLBACK_BASE_URLS)
+            .distinct()
+            .map { buildApi(it) }
 
     private fun buildApi(baseUrl: String): HotApi =
         Retrofit.Builder()

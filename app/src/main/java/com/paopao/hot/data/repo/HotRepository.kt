@@ -5,6 +5,9 @@ import com.paopao.hot.data.api.HotItemDto
 import com.paopao.hot.data.db.SnapshotDao
 import com.paopao.hot.data.db.SnapshotEntity
 import com.paopao.hot.data.model.PlatformDef
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
 
 /** UI 层用的热榜条目 */
@@ -31,38 +34,54 @@ data class AggregatedEntry(
 )
 
 class HotRepository(
-    private val apiProvider: () -> HotApi,
+    private val apiProvider: () -> List<HotApi>,
     private val dao: SnapshotDao
 ) {
 
-    /** 拉取单个平台并写入快照，返回是否成功 */
+    /** 上次成功的 API 实例下标，粘性优先复用，减少无谓的失败重试 */
+    @Volatile
+    private var preferredApiIndex = 0
+
+    /** 拉取单个平台并写入快照，主实例失败自动切换备用实例，返回是否成功 */
     suspend fun refreshPlatform(platform: PlatformDef, day: Long): Boolean {
-        return try {
-            val resp = apiProvider().getHot(platform.route)
-            val items = resp.data.take(TOP_N)
-            val now = System.currentTimeMillis()
-            val entities = items.mapIndexed { index, dto ->
-                SnapshotEntity(
-                    route = platform.route,
-                    name = platform.name,
-                    dateEpochDay = day,
-                    rank = index + 1,
-                    title = dto.title.orEmpty().trim(),
-                    url = dto.mobileUrl ?: dto.url,
-                    hot = dto.hot,
-                    fetchedAt = now
-                )
-            }.filter { it.title.isNotEmpty() }
-            dao.upsertAll(entities)
-            true
-        } catch (t: Throwable) {
-            false
+        val apis = apiProvider()
+        // 从上次成功的实例开始尝试，形成粘性路由
+        val ordered = apis.drop(preferredApiIndex.coerceAtMost(apis.lastIndex)) +
+            apis.take(preferredApiIndex.coerceAtMost(apis.lastIndex))
+        for (api in ordered) {
+            try {
+                val resp = api.getHot(platform.route)
+                val items = resp.data.take(TOP_N)
+                val now = System.currentTimeMillis()
+                val entities = items.mapIndexed { index, dto ->
+                    SnapshotEntity(
+                        route = platform.route,
+                        name = platform.name,
+                        dateEpochDay = day,
+                        rank = index + 1,
+                        title = dto.title.orEmpty().trim(),
+                        url = dto.mobileUrl ?: dto.url,
+                        hot = dto.hot,
+                        fetchedAt = now
+                    )
+                }.filter { it.title.isNotEmpty() }
+                dao.upsertAll(entities)
+                preferredApiIndex = apis.indexOf(api).coerceAtLeast(0)
+                return true
+            } catch (_: Throwable) {
+                // 换下一个实例重试
+            }
         }
+        return false
     }
 
-    /** 刷新全部平台，返回 route -> 成功与否 */
-    suspend fun refreshAll(day: Long = todayEpochDay()): Map<String, Boolean> =
-        com.paopao.hot.data.model.PLATFORMS.associate { it.route to refreshPlatform(it, day) }
+    /** 刷新全部平台（并行拉取），返回 route -> 成功与否 */
+    suspend fun refreshAll(day: Long = todayEpochDay()): Map<String, Boolean> = coroutineScope {
+        com.paopao.hot.data.model.PLATFORMS
+            .map { p -> async { p.route to refreshPlatform(p, day) } }
+            .awaitAll()
+            .toMap()
+    }
 
     /** 今日榜（读本地快照，需先 refresh） */
     suspend fun today(route: String): List<HotEntry> {

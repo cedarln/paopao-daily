@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -37,7 +38,9 @@ data class RowUi(
     val hot: Double?,
     val daysOnBoard: Int?,
     val bestRank: Int?,
-    val url: String?
+    val url: String?,
+    /** 「全部」视图里同一话题被几个平台收录，1 表示仅单平台 */
+    val platformCount: Int = 1
 )
 
 data class BoardUiState(
@@ -56,8 +59,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var period by mutableStateOf(Period.TODAY)
         private set
-    var route by mutableStateOf<String?>(PLATFORMS.first().route)
+    var route by mutableStateOf<String?>(null)
         private set
+
+    /** 当前应用内详情页正在查看的条目，null 表示关闭 */
+    var detail by mutableStateOf<RowUi?>(null)
+        private set
+
+    /** 列表关键词过滤（空串 = 不过滤） */
+    var query by mutableStateOf("")
+        private set
+
+    fun setQuery(q: String) {
+        query = q
+        viewModelScope.launch { loadBoard() }
+    }
+
+    fun openDetail(row: RowUi) { detail = row }
+    fun closeDetail() { detail = null }
 
     private val _board = MutableStateFlow(BoardUiState())
     val board: StateFlow<BoardUiState> = _board.asStateFlow()
@@ -67,6 +86,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            // 恢复上次浏览的周期与平台，再加载榜单
+            val saved = container.settingsStore.settings.first()
+            period = Period.entries.firstOrNull { it.name == saved.lastPeriod } ?: Period.TODAY
+            route = saved.lastRoute
             loadBoard()
         }
     }
@@ -74,13 +97,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun selectPeriod(p: Period) {
         if (p == period) return
         period = p
+        persistUiState()
         viewModelScope.launch { loadBoard() }
     }
 
     fun selectRoute(r: String?) {
         if (r == route) return
         route = r
+        persistUiState()
         viewModelScope.launch { loadBoard() }
+    }
+
+    private fun persistUiState() {
+        val p = period
+        val r = route
+        viewModelScope.launch { container.settingsStore.setUiState(p.name, r) }
     }
 
     /** 手动刷新：全平台拉取 + 重新加载 */
@@ -99,7 +130,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun loadBoard() {
-        _board.value = _board.value.copy(loading = true, error = null)
+        // 列表已有内容时只静默更新，避免切换周期/平台时整页闪 loading
+        _board.value = _board.value.copy(loading = _board.value.items.isEmpty(), error = null)
         val dataStart = repo.earliestDay()
         val rows: List<RowUi> = try {
             when (period) {

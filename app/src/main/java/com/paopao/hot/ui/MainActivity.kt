@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.paopao.hot.ui.screens.DetailDialog
 import com.paopao.hot.ui.screens.HotListScreen
 import com.paopao.hot.ui.screens.SettingsScreen
 import com.paopao.hot.ui.theme.PaopaoTheme
@@ -98,9 +99,15 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
                     state = board,
                     selectedRoute = viewModel.route,
                     onRouteSelect = { viewModel.selectRoute(it) },
-                    onRefresh = { viewModel.refresh() }
+                    onRefresh = { viewModel.refresh() },
+                    onOpenDetail = { viewModel.openDetail(it) }
                 )
             }
+        }
+
+        // 应用内详情页（WebView）
+        viewModel.detail?.let { row ->
+            DetailDialog(row = row, onClose = { viewModel.closeDetail() })
         }
     }
 }
