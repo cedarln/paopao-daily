@@ -1,8 +1,6 @@
 package com.paopao.hot.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,26 +11,36 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,7 +60,9 @@ fun HotListScreen(
     state: BoardUiState,
     selectedRoute: String?,
     onRouteSelect: (String?) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onOpenDetail: (RowUi) -> Unit = {},
+    onLongPress: (RowUi) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         PlatformFilterRow(
@@ -76,7 +86,12 @@ fun HotListScreen(
                 ) {
                     item { BoardSummary(state, period) }
                     itemsIndexedWithDivider(state.items) { row ->
-                        HotItemRow(row = row, period = period, onClick = { }, onLongClick = { })
+                        HotItemRow(
+                            row = row,
+                            period = period,
+                            onClick = { if (row.url != null) onOpenDetail(row) },
+                            onLongClick = { onLongPress(row) }
+                        )
                     }
                     item { Spacer(Modifier.height(16.dp)) }
                 }
@@ -165,8 +180,9 @@ private fun FilterChipUi(label: String, selected: Boolean, onClick: () -> Unit) 
 
 /**
  * 紧凑榜单行：排名 + 单行标题 + 热度值右对齐。
- * 参考主流热榜应用（NewsNow / 今日热榜）的行式布局，替代松散卡片。
+ * 点击应用内阅读，长按弹出操作菜单。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HotItemRow(
     row: RowUi,
@@ -174,44 +190,81 @@ private fun HotItemRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = true, onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RankText(row.rank, modifier = Modifier.width(32.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = row.title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = row.name,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    var menuOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        menuOpen = true
+                        onLongClick()
+                    }
                 )
-                if (row.hot != null && row.hot > 0) {
-                    Spacer(Modifier.width(8.dp))
+                .padding(horizontal = 4.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RankText(row.rank, modifier = Modifier.width(32.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = row.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = Format.hot(row.hot),
+                        text = row.name,
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-                if (period != Period.TODAY && row.daysOnBoard != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "上榜 ${row.daysOnBoard} 天",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    if (row.hot != null && row.hot > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = Format.hot(row.hot),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                    if (period != Period.TODAY && row.daysOnBoard != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "上榜 ${row.daysOnBoard} 天",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("应用内打开") },
+                enabled = row.url != null,
+                leadingIcon = { Icon(Icons.Filled.MenuBook, null) },
+                onClick = { menuOpen = false; onClick() }
+            )
+            DropdownMenuItem(
+                text = { Text("复制链接") },
+                enabled = row.url != null,
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                onClick = { menuOpen = false; copyLink(context, row) }
+            )
+            DropdownMenuItem(
+                text = { Text("分享") },
+                enabled = row.url != null,
+                leadingIcon = { Icon(Icons.Filled.Share, null) },
+                onClick = { menuOpen = false; shareLink(context, row) }
+            )
+            DropdownMenuItem(
+                text = { Text("浏览器打开") },
+                enabled = row.url != null,
+                leadingIcon = { Icon(Icons.Filled.OpenInNew, null) },
+                onClick = { menuOpen = false; openInBrowser(context, row.url) }
+            )
         }
     }
 }
