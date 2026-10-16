@@ -60,7 +60,9 @@ class HotRepository(
                         dateEpochDay = day,
                         rank = index + 1,
                         title = dto.title.orEmpty().trim(),
-                        url = dto.mobileUrl ?: dto.url,
+                        // 部分平台（如知乎）的 mobileUrl 是 zhihu:// 自定义协议，
+                        // WebView 加载不了，优先存 http(s) 链接
+                        url = pickHttpUrl(dto.mobileUrl, dto.url),
                         hot = dto.hot,
                         fetchedAt = now
                     )
@@ -136,6 +138,26 @@ class HotRepository(
         url = url,
         hot = hot
     )
+
+    /** 优先返回 http(s) 链接：mobileUrl 若为自定义 scheme 则回落到标准 url */
+    private fun pickHttpUrl(mobileUrl: String?, url: String?): String? = when {
+        com.paopao.hot.util.HotUrls.isHttpUrl(mobileUrl) -> mobileUrl
+        com.paopao.hot.util.HotUrls.isHttpUrl(url) -> url
+        else -> url ?: mobileUrl
+    }
+
+    /**
+     * 清洗历史快照里的自定义 scheme 链接（如备用实例曾返回 zhihu://）：
+     * 能转换成网页版链接的就地改写，转不了的置空（条目变为不可点击）。
+     * App 启动时执行一次。
+     */
+    suspend fun sanitizeLocalUrls() {
+        val bad = dao.getNonHttpUrls()
+        for (row in bad) {
+            val fixed = com.paopao.hot.util.HotUrls.toWebUrl(row.url)
+            dao.updateUrl(row.id, fixed)
+        }
+    }
 
     companion object {
         const val TOP_N = 20

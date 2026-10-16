@@ -86,7 +86,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            // 恢复上次浏览的周期与平台，再加载榜单
+            // 清洗历史数据里的自定义 scheme 链接，再恢复浏览状态
+            repo.sanitizeLocalUrls()
             val saved = container.settingsStore.settings.first()
             period = Period.entries.firstOrNull { it.name == saved.lastPeriod } ?: Period.TODAY
             route = saved.lastRoute

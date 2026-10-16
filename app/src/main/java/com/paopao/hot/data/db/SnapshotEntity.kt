@@ -45,6 +45,15 @@ interface SnapshotDao {
     @Query("SELECT MIN(dateEpochDay) FROM snapshots")
     suspend fun earliestDay(): Long?
 
+    @Query("SELECT * FROM snapshots")
+    suspend fun getAll(): List<SnapshotEntity>
+
+    @Query("SELECT * FROM snapshots WHERE url IS NOT NULL AND url NOT LIKE 'http%'")
+    suspend fun getNonHttpUrls(): List<SnapshotEntity>
+
+    @Query("UPDATE snapshots SET url = :url WHERE id = :id")
+    suspend fun updateUrl(id: Long, url: String?)
+
     @Query("DELETE FROM snapshots WHERE dateEpochDay < :beforeDay")
     suspend fun trimBefore(beforeDay: Long)
 

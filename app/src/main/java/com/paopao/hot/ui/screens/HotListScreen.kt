@@ -257,7 +257,7 @@ private fun HotItemRow(
                 text = { Text("复制链接") },
                 enabled = row.url != null,
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
-                onClick = { menuOpen = false; copyLink(context, row) }
+                onClick = { menuOpen = false; copyLink(context, row.url) }
             )
             DropdownMenuItem(
                 text = { Text("分享") },
