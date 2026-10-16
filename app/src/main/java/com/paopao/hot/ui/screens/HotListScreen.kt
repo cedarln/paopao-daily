@@ -17,9 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,7 +81,10 @@ fun HotListScreen(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) { CircularProgressIndicator() }
-                state.items.isEmpty() -> EmptyBoard(state.error)
+                state.items.isEmpty() -> EmptyBoard(
+                    error = state.error,
+                    onRetry = onRefresh
+                )
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
@@ -217,9 +222,10 @@ private fun HotItemRow(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = row.name,
+                        text = if (row.platformCount > 1) "${row.name} 等${row.platformCount}个平台" else row.name,
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (row.platformCount > 1) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (row.hot != null && row.hot > 0) {
                         Spacer(Modifier.width(8.dp))
@@ -244,7 +250,7 @@ private fun HotItemRow(
             DropdownMenuItem(
                 text = { Text("应用内打开") },
                 enabled = row.url != null,
-                leadingIcon = { Icon(Icons.Filled.MenuBook, null) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                 onClick = { menuOpen = false; onClick() }
             )
             DropdownMenuItem(
@@ -262,7 +268,7 @@ private fun HotItemRow(
             DropdownMenuItem(
                 text = { Text("浏览器打开") },
                 enabled = row.url != null,
-                leadingIcon = { Icon(Icons.Filled.OpenInNew, null) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                 onClick = { menuOpen = false; openInBrowser(context, row.url) }
             )
         }
@@ -283,16 +289,24 @@ private fun RankText(rank: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyBoard(error: String?) {
+private fun EmptyBoard(error: String?, onRetry: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
             Text(text = "🫧", fontSize = 44.sp)
             Spacer(Modifier.height(8.dp))
             Text(
                 text = error ?: "这里还没有泡泡",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
             )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(onClick = onRetry) {
+                Text("刷新试试")
+            }
         }
     }
 }

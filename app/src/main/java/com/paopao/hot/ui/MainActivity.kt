@@ -6,16 +6,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.ViewWeek
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -54,16 +59,45 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsState()
 
     var currentTab by remember { mutableStateOf(Tab.TODAY) }
+    var searchOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = if (currentTab == Tab.SETTINGS) "泡泡热榜 · 设置" else "泡泡热榜",
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (searchOpen && currentTab != Tab.SETTINGS) {
+                        OutlinedTextField(
+                            value = viewModel.query,
+                            onValueChange = { viewModel.updateQuery(it) },
+                            placeholder = { Text("搜索热榜关键词", style = MaterialTheme.typography.bodyMedium) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text(
+                            text = if (currentTab == Tab.SETTINGS) "泡泡热榜 · 设置" else "泡泡热榜",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                actions = {
+                    if (currentTab != Tab.SETTINGS) {
+                        IconButton(
+                            onClick = {
+                                searchOpen = !searchOpen
+                                if (!searchOpen && viewModel.query.isNotEmpty()) {
+                                    viewModel.updateQuery("")
+                                }
+                            }
+                        ) {
+                            Icon(
+                                if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
+                                contentDescription = if (searchOpen) "关闭搜索" else "搜索"
+                            )
+                        }
+                    }
                 }
             )
         },

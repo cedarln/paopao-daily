@@ -70,7 +70,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var query by mutableStateOf("")
         private set
 
-    fun setQuery(q: String) {
+    fun updateQuery(q: String) {
         query = q
         viewModelScope.launch { loadBoard() }
     }
@@ -134,11 +134,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _board.value = _board.value.copy(loading = _board.value.items.isEmpty(), error = null)
         val dataStart = repo.earliestDay()
         val rows: List<RowUi> = try {
-            when (period) {
-                Period.TODAY -> buildTodayRows()
-                Period.WEEK -> buildAggregatedRows(HotRepository.weekStart())
-                Period.MONTH -> buildAggregatedRows(HotRepository.monthStart())
-            }
+            applyQuery(
+                when (period) {
+                    Period.TODAY -> buildTodayRows()
+                    Period.WEEK -> buildAggregatedRows(HotRepository.weekStart())
+                    Period.MONTH -> buildAggregatedRows(HotRepository.monthStart())
+                }
+            )
         } catch (t: Throwable) {
             _board.value = _board.value.copy(
                 loading = false,
@@ -158,14 +160,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 关键词过滤（标题包含即命中，忽略大小写） */
+    private fun applyQuery(rows: List<RowUi>): List<RowUi> =
+        if (query.isBlank()) rows
+        else rows.filter { it.title.contains(query, ignoreCase = true) }
+
     private suspend fun buildTodayRows(): List<RowUi> {
         val target = route
         return if (target == null) {
-            // 全部：跨平台合并，按热度排序取前 20
+            // 全部：跨平台同题合并（话题被多个平台同时收录则算一条），按热度排序取前 20
             PLATFORMS.flatMap { p -> repo.today(p.route) }
+                .groupBy { it.title }
+                .map { (_, list) ->
+                    val best = list.maxBy { it.hot ?: 0.0 }
+                    best.toRowUi(0, null).copy(platformCount = list.size)
+                }
                 .sortedByDescending { it.hot ?: 0.0 }
                 .take(HotRepository.TOP_N)
-                .mapIndexed { i, e -> e.toRowUi(i + 1, null) }
+                .mapIndexed { i, e -> e.copy(rank = i + 1) }
         } else {
             repo.today(target).map { it.toRowUi(it.rank, null) }
         }
@@ -175,12 +187,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val target = route
         return if (target == null) {
             PLATFORMS.flatMap { p -> repo.aggregated(p.route, fromDay) }
+                .groupBy { it.title }
+                .map { (_, list) ->
+                    val primary = list.sortedWith(
+                        compareByDescending<com.paopao.hot.data.repo.AggregatedEntry> { it.daysOnBoard }
+                            .thenByDescending { it.latestHot ?: 0.0 }
+                    ).first()
+                    primary.toRowUi(0).copy(platformCount = list.size)
+                }
                 .sortedWith(
-                    compareByDescending<com.paopao.hot.data.repo.AggregatedEntry> { it.daysOnBoard }
-                        .thenByDescending { it.latestHot ?: 0.0 }
+                    compareByDescending<RowUi> { it.daysOnBoard ?: 0 }
+                        .thenByDescending { it.hot ?: 0.0 }
                 )
                 .take(HotRepository.TOP_N)
-                .mapIndexed { i, e -> e.toRowUi(i + 1) }
+                .mapIndexed { i, e -> e.copy(rank = i + 1) }
         } else {
             repo.aggregated(target, fromDay).map { it.toRowUi(it.bestRank) }
         }
