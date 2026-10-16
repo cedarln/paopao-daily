@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,6 +19,25 @@ android {
         versionName = "1.1.1"
     }
 
+    signingConfigs {
+        create("release") {
+            // 签名信息全部来自环境变量（CI 用 GitHub Secrets 注入，
+            // 本地构建可从 keystores/paopao-hot-topic.properties 导出），
+            // 环境变量缺失时不签名，避免本地/PR 构建失败
+            val ksBase64 = System.getenv("KEYSTORE_BASE64")
+            if (!ksBase64.isNullOrBlank()) {
+                val ksFile = File.createTempFile("paopao", ".jks")
+                Base64.getDecoder().decode(ksBase64).inputStream().use { input ->
+                    ksFile.outputStream().use { input.copyTo(it) }
+                }
+                storeFile = ksFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -25,6 +46,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (System.getenv("KEYSTORE_BASE64") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
