@@ -6,13 +6,16 @@ import kotlin.math.roundToInt
 
 object Format {
 
-    /** 热度值格式化：1.2亿 / 34.5万 / 678 */
+    /** 热度值格式化：1.2亿 / 34.5万 / 678（整数位去掉无意义的 .0） */
     fun hot(value: Double?): String = when {
         value == null -> ""
-        value >= 1e8 -> String.format("%.1f亿", value / 1e8)
-        value >= 1e4 -> String.format("%.1f万", value / 1e4)
+        value >= 1e8 -> trimZero(String.format("%.1f亿", value / 1e8))
+        value >= 1e4 -> trimZero(String.format("%.1f万", value / 1e4))
         else -> value.roundToInt().toString()
     }
+
+    private fun trimZero(s: String): String =
+        if (s.endsWith(".0")) s.dropLast(2) else s
 
     /** 文件大小格式化：1.2 MB / 856 KB */
     fun size(bytes: Long): String = when {

@@ -67,13 +67,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
 
-      # Release 资产不用默认的 app-release.apk，按「应用名-版本号-release.apk」命名
+      # Release 资产不用默认的 app-release.apk，按「仓库名-版本号-release.apk」命名
+      # （GitHub 资产名不支持中文，故用 ASCII 仓库名）
       - name: Rename release APK
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          mv app/build/outputs/apk/release/app-release.apk "泡泡热榜-v${VERSION}-release.apk"
+          mv app/build/outputs/apk/release/app-release.apk "paopao-daily-v${VERSION}-release.apk"
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: 泡泡热榜-*.apk
+          files: paopao-daily-*.apk

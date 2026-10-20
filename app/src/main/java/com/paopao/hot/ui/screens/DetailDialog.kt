@@ -131,6 +131,17 @@ private fun WebViewContent(rawUrl: String?) {
                 // 抖音/虎扑等站点会据此识别 WebView 并返回空白反爬页
                 settings.userAgentString = settings.userAgentString.replace("; wv", "")
                 webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString() ?: return false
+                        // http(s) 页内跳转继续在应用内加载；
+                        // zhihu:// 等自定义 scheme 是页面试图拉起自家 App 的深链，
+                        // WebView 加载不了，也不主动拉起 App——直接拦截留在当前页面
+                        return !(url.startsWith("http://") || url.startsWith("https://"))
+                    }
+
                     override fun onReceivedError(
                         view: WebView?,
                         request: WebResourceRequest?,
