@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 检查更新：DownloadManager 把更新包下到 getExternalFilesDir/update/ 下，走这里暴露给系统安装器 -->
+    <external-files-path name="update_apk" path="." />
+</paths>

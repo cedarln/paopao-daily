@@ -15,14 +15,14 @@ android {
         applicationId = "com.paopao.hot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2.0"
     }
 
     signingConfigs {
         create("release") {
             // 签名信息全部来自环境变量（CI 用 GitHub Secrets 注入，
-            // 本地构建可从 keystores/paopao-hot-topic.properties 导出），
+            // 本地构建可从 keystores/paopao-daily.properties 导出），
             // 环境变量缺失时不签名，避免本地/PR 构建失败
             val ksBase64 = System.getenv("KEYSTORE_BASE64")
             if (!ksBase64.isNullOrBlank()) {

@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "paopao-hot-topic"
+rootProject.name = "paopao-daily"
 include(":app")

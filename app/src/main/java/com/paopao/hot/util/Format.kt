@@ -14,6 +14,13 @@ object Format {
         else -> value.roundToInt().toString()
     }
 
+    /** 文件大小格式化：1.2 MB / 856 KB */
+    fun size(bytes: Long): String = when {
+        bytes >= 1L shl 20 -> String.format("%.1f MB", bytes / 1048576.0)
+        bytes >= 1L shl 10 -> String.format("%.0f KB", bytes / 1024.0)
+        else -> "$bytes B"
+    }
+
     fun date(epochDay: Long): String =
         LocalDate.ofEpochDay(epochDay).format(DateTimeFormatter.ofPattern("MM-dd"))
 
