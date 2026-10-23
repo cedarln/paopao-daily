@@ -125,6 +125,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             period = Period.entries.firstOrNull { it.name == saved.lastPeriod } ?: Period.TODAY
             route = saved.lastRoute?.takeIf { saved.isPlatformEnabled(it) }
             loadBoard()
+            // 从旧版本升级上来时，本地快照还没有摘要/封面，静默补拉一次
+            if (saved.contentVersion < SettingsDefaults.CONTENT_VERSION) {
+                val hadData = _board.value.items.isNotEmpty()
+                if (hadData) refresh()
+                container.settingsStore.setContentVersion(SettingsDefaults.CONTENT_VERSION)
+            }
         }
     }
 

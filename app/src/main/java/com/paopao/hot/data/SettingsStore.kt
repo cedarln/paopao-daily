@@ -3,6 +3,7 @@ package com.paopao.hot.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,7 +19,9 @@ data class Settings(
     val lastPeriod: String? = null,
     val lastRoute: String? = null,
     /** null 表示从未调整过，默认全部订阅 */
-    val enabledRoutes: Set<String>? = null
+    val enabledRoutes: Set<String>? = null,
+    /** 本地快照的数据版本，低于当前版本说明是旧版写入的、缺少摘要/封面 */
+    val contentVersion: Int = 0
 ) {
     val effectiveEnabledRoutes: Set<String>
         get() = enabledRoutes ?: PLATFORMS.map { it.route }.toSet()
@@ -34,6 +37,7 @@ class SettingsStore(private val context: Context) {
         val LAST_PERIOD = stringPreferencesKey("last_period")
         val LAST_ROUTE = stringPreferencesKey("last_route")
         val ENABLED_ROUTES = stringSetPreferencesKey("enabled_routes")
+        val CONTENT_VERSION = intPreferencesKey("content_version")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { prefs ->
@@ -42,7 +46,8 @@ class SettingsStore(private val context: Context) {
             autoSync = prefs[Keys.AUTO_SYNC] ?: true,
             lastPeriod = prefs[Keys.LAST_PERIOD],
             lastRoute = prefs[Keys.LAST_ROUTE],
-            enabledRoutes = prefs[Keys.ENABLED_ROUTES]
+            enabledRoutes = prefs[Keys.ENABLED_ROUTES],
+            contentVersion = prefs[Keys.CONTENT_VERSION] ?: 0
         )
     }
 
@@ -71,10 +76,17 @@ class SettingsStore(private val context: Context) {
     suspend fun resetPlatformSubscriptions() {
         context.dataStore.edit { it.remove(Keys.ENABLED_ROUTES) }
     }
+
+    suspend fun setContentVersion(version: Int) {
+        context.dataStore.edit { it[Keys.CONTENT_VERSION] = version }
+    }
 }
 
 object SettingsDefaults {
     const val BASE_URL = "https://hot-api.liiiu.cn/"
+
+    /** 2 = 快照开始带摘要/封面/移动链接；旧版本升级后需要补一次快照 */
+    const val CONTENT_VERSION = 2
 
     /** 备用公共实例：主实例失败时按顺序故障转移 */
     val FALLBACK_BASE_URLS = listOf("https://api-hot.imsyy.top/")

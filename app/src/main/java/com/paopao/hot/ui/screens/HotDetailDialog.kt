@@ -23,8 +23,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -82,6 +84,9 @@ fun HotDetailDialog(
     val canonical = HotUrls.canonical(readUrl, readMobile)
     val appOnly = HotUrls.isAppOnly(readMobile ?: readUrl)
     val hasLink = canonical != null
+    // 没有原文链接时退化为站内搜索，保证详情页永远有可点的操作
+    val searchUrl = HotUrls.searchUrl(source?.route ?: row.route, row.title)
+    val fallbackUrl = canonical ?: searchUrl
 
     val brand = platformColor(source?.route ?: row.route)
 
@@ -99,8 +104,8 @@ fun HotDetailDialog(
             Column(Modifier.fillMaxSize()) {
                 DetailTopBar(
                     onClose = onClose,
-                    onCopy = { copyText(context, "paopao", canonical) },
-                    onShare = { shareText(context, row.title, canonical) }
+                    onCopy = { copyText(context, "paopao", fallbackUrl) },
+                    onShare = { shareText(context, row.title, fallbackUrl) }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
@@ -139,9 +144,32 @@ fun HotDetailDialog(
                     item {
                         DescriptionBlock(
                             description = row.description,
+                            hasLink = hasLink,
                             expanded = descExpanded,
                             onToggle = { descExpanded = !descExpanded }
                         )
+                    }
+
+                    // 摘要下方紧跟一个主操作：提示里说「点下方」，按钮就真的在下方
+                    item {
+                        FilledTonalButton(
+                            onClick = {
+                                if (hasLink) onReadOriginal(row.title, readMobile, readUrl)
+                                else openInBrowser(context, fallbackUrl)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (hasLink) Icons.AutoMirrored.Filled.MenuBook
+                                else Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (hasLink) "阅读原文" else "在浏览器搜索这个话题")
+                        }
                     }
 
                     if (appOnly) {
@@ -170,22 +198,14 @@ fun HotDetailDialog(
                         }
                     }
 
-                    if (!hasLink) {
-                        item {
-                            Text(
-                                text = "该条目暂无可用的原文链接，你仍然可以查看上面的摘要。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
 
                 DetailActionBar(
-                    readEnabled = hasLink,
+                    hasLink = hasLink,
                     appOnly = appOnly,
                     onRead = { onReadOriginal(row.title, readMobile, readUrl) },
-                    onBrowser = { openInBrowser(context, canonical) }
+                    onBrowser = { openInBrowser(context, fallbackUrl) },
+                    onCopyTitle = { copyText(context, "paopao", row.title) }
                 )
             }
         }
@@ -272,6 +292,7 @@ private fun MetaPill(text: String, color: Color) {
 @Composable
 private fun DescriptionBlock(
     description: String?,
+    hasLink: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit
 ) {
@@ -284,7 +305,11 @@ private fun DescriptionBlock(
         )
         if (desc.isEmpty()) {
             Text(
-                text = "该平台暂未提供摘要，可以点下方「阅读原文」查看完整内容。",
+                text = if (hasLink) {
+                    "该平台暂未提供摘要，可以点下方「阅读原文」查看完整内容。"
+                } else {
+                    "该平台暂未提供摘要，也没有可直接打开的原文链接，可以按标题去平台内搜索。"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -343,10 +368,11 @@ private fun SourcePicker(
 
 @Composable
 private fun DetailActionBar(
-    readEnabled: Boolean,
+    hasLink: Boolean,
     appOnly: Boolean,
     onRead: () -> Unit,
-    onBrowser: () -> Unit
+    onBrowser: () -> Unit,
+    onCopyTitle: () -> Unit
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -360,36 +386,48 @@ private fun DetailActionBar(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 明确只能在 App 内看的平台，把「浏览器打开」设为主操作
-            if (appOnly) {
-                Button(
-                    onClick = onBrowser,
-                    enabled = readEnabled,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("浏览器打开")
+            when {
+                // 明确只能在 App 内看的平台，把「浏览器打开」设为主操作
+                appOnly -> {
+                    Button(
+                        onClick = onBrowser,
+                        enabled = hasLink,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("浏览器打开")
+                    }
+                    OutlinedButton(onClick = onRead, enabled = hasLink) {
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("应用内试试")
+                    }
                 }
-                OutlinedButton(onClick = onRead, enabled = readEnabled) {
-                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("应用内试试")
+                hasLink -> {
+                    Button(onClick = onRead, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("阅读原文")
+                    }
+                    OutlinedButton(onClick = onBrowser) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("浏览器")
+                    }
                 }
-            } else {
-                Button(
-                    onClick = onRead,
-                    enabled = readEnabled,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("阅读原文")
-                }
-                OutlinedButton(onClick = onBrowser, enabled = readEnabled) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("浏览器")
+                // 连原文链接都没有时也要给出可执行操作，而不是灰按钮
+                else -> {
+                    Button(onClick = onBrowser, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("搜索话题")
+                    }
+                    OutlinedButton(onClick = onCopyTitle) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("复制标题")
+                    }
                 }
             }
         }

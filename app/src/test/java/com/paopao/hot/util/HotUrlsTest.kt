@@ -86,4 +86,21 @@ class HotUrlsTest {
     fun `plain http is still considered loadable`() {
         assertTrue(HotUrls.isHttpUrl("http://example.com/a"))
     }
+
+    @Test
+    fun `search url encodes the title`() {
+        val url = HotUrls.searchUrl("zhihu", "黄海 实弹射击")
+        assertEquals(
+            "https://www.zhihu.com/search?type=content&q=%E9%BB%84%E6%B5%B7+%E5%AE%9E%E5%BC%B9%E5%B0%84%E5%87%BB",
+            url
+        )
+        assertTrue(HotUrls.isHttpUrl(url))
+    }
+
+    @Test
+    fun `search url falls back to bing for unknown route`() {
+        assertTrue(
+            HotUrls.searchUrl("unknown", "話題").startsWith("https://www.bing.com/search?q=")
+        )
+    }
 }

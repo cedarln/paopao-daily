@@ -3,6 +3,7 @@ package com.paopao.hot.util
 import android.net.Uri
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 /**
  * 热榜链接处理：
@@ -70,6 +71,28 @@ object HotUrls {
     /** 分享 / 复制 / 浏览器打开优先使用的规范链接 */
     fun canonical(url: String?, mobileUrl: String?): String? =
         normalize(url) ?: normalize(mobileUrl)
+
+    /**
+     * 条目没有原文链接时的兜底：用平台站内搜索找这个话题。
+     * 这样详情页永远有一个可执行的操作，而不是给一个灰掉的按钮。
+     */
+    fun searchUrl(route: String, title: String): String {
+        val q = runCatching { URLEncoder.encode(title.trim(), "UTF-8") }.getOrDefault("")
+        val template = when (route) {
+            "zhihu" -> "https://www.zhihu.com/search?type=content&q=%s"
+            "weibo" -> "https://s.weibo.com/weibo?q=%s"
+            "baidu" -> "https://www.baidu.com/s?wd=%s"
+            "tieba" -> "https://tieba.baidu.com/f/search/res?qw=%s"
+            "douyin" -> "https://www.douyin.com/search/%s"
+            "bilibili" -> "https://search.bilibili.com/all?keyword=%s"
+            "douban-group" -> "https://www.douban.com/group/search?cat=1013&q=%s"
+            "hupu" -> "https://search.hupu.com/?q=%s"
+            "juejin" -> "https://juejin.cn/search?query=%s"
+            "ithome" -> "https://so.ithome.com/?keyword=%s"
+            else -> "https://www.bing.com/search?q=%s"
+        }
+        return template.replace("%s", q)
+    }
 
     /** WebView 加载目标：url + 是否使用桌面 UA */
     data class WebTarget(val url: String, val desktop: Boolean = false)
