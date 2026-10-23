@@ -34,9 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.paopao.hot.ui.screens.DetailDialog
+import com.paopao.hot.data.model.PLATFORMS
+import com.paopao.hot.ui.screens.HotDetailDialog
 import com.paopao.hot.ui.screens.HotListScreen
 import com.paopao.hot.ui.screens.SettingsScreen
+import com.paopao.hot.ui.screens.WebReaderDialog
 import com.paopao.hot.ui.theme.PaopaoTheme
 
 class MainActivity : ComponentActivity() {
@@ -58,8 +60,19 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
     val board by viewModel.board.collectAsState()
     val settings by viewModel.settings.collectAsState()
 
-    var currentTab by remember { mutableStateOf(Tab.TODAY) }
+    var settingsTab by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
+    val enabledPlatforms = PLATFORMS.filter { settings.isPlatformEnabled(it.route) }
+    // 以 ViewModel 恢复的周期为准，避免「tab 显示今日、列表却是本周」的不一致
+    val currentTab = if (settingsTab) {
+        Tab.SETTINGS
+    } else {
+        when (viewModel.period) {
+            Period.TODAY -> Tab.TODAY
+            Period.WEEK -> Tab.WEEK
+            Period.MONTH -> Tab.MONTH
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -107,8 +120,12 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
                     NavigationBarItem(
                         selected = currentTab == tab,
                         onClick = {
-                            currentTab = tab
-                            if (tab != Tab.SETTINGS) viewModel.selectPeriod(tab.toPeriod())
+                            if (tab == Tab.SETTINGS) {
+                                settingsTab = true
+                            } else {
+                                settingsTab = false
+                                viewModel.selectPeriod(tab.toPeriod())
+                            }
                         },
                         icon = { Icon(tab.icon(), contentDescription = tab.label) },
                         label = { Text(tab.label) }
@@ -131,6 +148,7 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
                 HotListScreen(
                     period = currentTab.toPeriod(),
                     state = board,
+                    platforms = enabledPlatforms,
                     selectedRoute = viewModel.route,
                     onRouteSelect = { viewModel.selectRoute(it) },
                     onRefresh = { viewModel.refresh() },
@@ -138,10 +156,23 @@ private fun PaopaoAppUi(viewModel: MainViewModel = viewModel()) {
                 )
             }
         }
-
-        // 应用内详情页（WebView）
+        // 一级：原生话题详情（不联网、不跳转）
         viewModel.detail?.let { row ->
-            DetailDialog(row = row, onClose = { viewModel.closeDetail() })
+            HotDetailDialog(
+                row = row,
+                onClose = { viewModel.closeDetail() },
+                onReadOriginal = { title, mobileUrl, url ->
+                    viewModel.openReader(title, mobileUrl, url)
+                }
+            )
+        }
+
+        // 二级：用户主动进入的网页阅读器
+        viewModel.reader?.let { request ->
+            WebReaderDialog(
+                request = request,
+                onClose = { viewModel.closeReader() }
+            )
         }
     }
 }

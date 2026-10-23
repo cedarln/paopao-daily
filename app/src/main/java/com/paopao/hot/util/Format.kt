@@ -35,7 +35,7 @@ object Format {
         return when (d.toLocalDate()) {
             today -> String.format("今天 %02d:%02d", d.hour, d.minute)
             today.minusDays(1) -> String.format("昨天 %02d:%02d", d.hour, d.minute)
-            else -> d.toLocalDate().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+            else -> d.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
         }
     }
 }

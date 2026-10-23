@@ -1,7 +1,9 @@
 package com.paopao.hot.ui.screens
 
 import android.app.Activity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,7 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -33,12 +39,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.paopao.hot.data.Settings
 import com.paopao.hot.data.SettingsDefaults
+import com.paopao.hot.data.model.PLATFORMS
 import com.paopao.hot.ui.BoardUiState
 import com.paopao.hot.ui.MainViewModel
 import com.paopao.hot.util.Format
@@ -68,6 +77,9 @@ fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
+
+        // 平台订阅
+        PlatformSubscriptionCard(settings = settings, viewModel = viewModel)
 
         // 数据源
         Card(
@@ -141,6 +153,9 @@ fun SettingsScreen(
                 Text(
                     "泡泡热榜 · 开源项目（github.com/cedarln/${UpdateChecker.REPO}）\n\n" +
                         "· 数据聚合基于开源项目 DailyHotApi（GPL-3.0），感谢原作者 imsyy 与社区维护者\n" +
+                        "· 点击条目先看原生摘要，点「阅读原文」才会加载网页\n" +
+                        "· 阅读器会拦截平台 App 深链，并隐藏站点顶栏和下载横幅\n" +
+                        "· 网页体验不佳的平台，可在上方「平台订阅」中关闭\n" +
                         "· 小红书暂无公开热榜接口，后续版本视可行方案支持\n" +
                         "· 榜单内容版权归各平台所有，仅供个人阅读参考\n" +
                         "· 全部数据仅保存在本机，App 不上传任何信息",
@@ -167,6 +182,83 @@ fun SettingsScreen(
                 TextButton(onClick = { showClearDialog = false }) { Text("取消") }
             }
         )
+    }
+}
+
+// ---------- 平台订阅 ----------
+
+/**
+ * 订阅哪些平台就只抓哪些平台：既减少无效请求，
+ * 也能让用户直接避开网页版体验差的平台（如必须登录的抖音）。
+ */
+@Composable
+private fun PlatformSubscriptionCard(settings: Settings, viewModel: MainViewModel) {
+    val enabledCount = PLATFORMS.count { settings.isPlatformEnabled(it.route) }
+    val allEnabled = enabledCount == PLATFORMS.size
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("平台订阅", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "已订阅 $enabledCount / ${PLATFORMS.size} 个平台",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = { viewModel.setAllPlatformsSubscribed(!allEnabled) }) {
+                    Text(if (allEnabled) "全部关闭" else "全部开启")
+                }
+            }
+            Text(
+                "只刷新和展示已订阅的平台。「全部」榜、平台筛选和后台同步都会遵循这里的选择；网页版限制多、阅读体验差的平台可以关掉。",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HorizontalDivider()
+            PLATFORMS.forEachIndexed { index, platform ->
+                val checked = settings.isPlatformEnabled(platform.route)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = checked,
+                            role = Role.Switch,
+                            onValueChange = { viewModel.setPlatformSubscribed(platform.route, it) }
+                        )
+                        .padding(vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(platformColor(platform.route))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(platform.name, fontSize = 15.sp)
+                        if (platform.route == "douyin") {
+                            Text(
+                                "网页版通常要求登录，应用内阅读体验一般",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(checked = checked, onCheckedChange = null)
+                }
+                if (index != PLATFORMS.lastIndex) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                }
+            }
+        }
     }
 }
 

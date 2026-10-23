@@ -22,8 +22,12 @@ data class SnapshotEntity(
     val dateEpochDay: Long,
     val rank: Int,
     val title: String,
+    val description: String? = null,
     val url: String?,
+    val mobileUrl: String? = null,
+    val cover: String? = null,
     val hot: Double?,
+    val timestamp: Long? = null,
     val fetchedAt: Long
 )
 
@@ -32,6 +36,9 @@ interface SnapshotDao {
 
     @Upsert
     suspend fun upsertAll(items: List<SnapshotEntity>)
+
+    @Query("DELETE FROM snapshots WHERE route = :route AND dateEpochDay = :day")
+    suspend fun deleteDay(route: String, day: Long)
 
     @Query("SELECT * FROM snapshots WHERE route = :route AND dateEpochDay = :day ORDER BY rank ASC")
     suspend fun getDay(route: String, day: Long): List<SnapshotEntity>
@@ -45,14 +52,16 @@ interface SnapshotDao {
     @Query("SELECT MIN(dateEpochDay) FROM snapshots")
     suspend fun earliestDay(): Long?
 
-    @Query("SELECT * FROM snapshots")
-    suspend fun getAll(): List<SnapshotEntity>
+    /** 需要清洗的链接：自定义 scheme 或残留 HTML 实体转义 */
+    @Query(
+        "SELECT * FROM snapshots WHERE " +
+            "(url IS NOT NULL AND (url NOT LIKE 'http%' OR url LIKE '%&amp;%')) OR " +
+            "(mobileUrl IS NOT NULL AND (mobileUrl NOT LIKE 'http%' OR mobileUrl LIKE '%&amp;%'))"
+    )
+    suspend fun getDirtyUrls(): List<SnapshotEntity>
 
-    @Query("SELECT * FROM snapshots WHERE url IS NOT NULL AND url NOT LIKE 'http%'")
-    suspend fun getNonHttpUrls(): List<SnapshotEntity>
-
-    @Query("UPDATE snapshots SET url = :url WHERE id = :id")
-    suspend fun updateUrl(id: Long, url: String?)
+    @Query("UPDATE snapshots SET url = :url, mobileUrl = :mobileUrl WHERE id = :id")
+    suspend fun updateUrls(id: Long, url: String?, mobileUrl: String?)
 
     @Query("DELETE FROM snapshots WHERE dateEpochDay < :beforeDay")
     suspend fun trimBefore(beforeDay: Long)

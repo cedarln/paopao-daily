@@ -6,11 +6,12 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.paopao.hot.data.model.PLATFORMS
 import com.paopao.hot.di.AppContainer
-import com.paopao.hot.data.repo.HotRepository
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
-/** 每日后台同步：为周/月聚合积累快照数据 */
+/** 每日后台同步：为周/月聚合积累快照数据（只同步已订阅的平台） */
 class DailySyncWorker(
     context: Context,
     params: WorkerParameters
@@ -18,8 +19,12 @@ class DailySyncWorker(
 
     override suspend fun doWork(): Result {
         val container = AppContainer(applicationContext)
-        container.repository.refreshAll()
-        container.repository.trim()
+        val enabled = container.settingsStore.settings.first().effectiveEnabledRoutes
+        val platforms = PLATFORMS.filter { it.route in enabled }
+        if (platforms.isNotEmpty()) {
+            container.repository.refreshAll(platforms)
+            container.repository.trim()
+        }
         return Result.success()
     }
 

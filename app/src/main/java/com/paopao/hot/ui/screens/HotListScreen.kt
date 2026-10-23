@@ -1,6 +1,7 @@
 package com.paopao.hot.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,10 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -40,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -47,11 +51,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.paopao.hot.data.model.PLATFORMS
+import com.paopao.hot.data.model.PlatformDef
 import com.paopao.hot.ui.BoardUiState
 import com.paopao.hot.ui.Period
 import com.paopao.hot.ui.RowUi
 import com.paopao.hot.util.Format
+import com.paopao.hot.util.HotUrls
 
 private val RankColors = listOf(Color(0xFFEF4444), Color(0xFFF97316), Color(0xFFF59E0B))
 
@@ -60,14 +65,15 @@ private val RankColors = listOf(Color(0xFFEF4444), Color(0xFFF97316), Color(0xFF
 fun HotListScreen(
     period: Period,
     state: BoardUiState,
+    platforms: List<PlatformDef>,
     selectedRoute: String?,
     onRouteSelect: (String?) -> Unit,
     onRefresh: () -> Unit,
-    onOpenDetail: (RowUi) -> Unit = {},
-    onLongPress: (RowUi) -> Unit = {}
+    onOpenDetail: (RowUi) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         PlatformFilterRow(
+            platforms = platforms,
             selectedRoute = selectedRoute,
             onSelect = onRouteSelect
         )
@@ -89,13 +95,12 @@ fun HotListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
                 ) {
-                    item { BoardSummary(state, period) }
+                    item { BoardSummary(state, period, platforms.size) }
                     itemsIndexedWithDivider(state.items) { row ->
                         HotItemRow(
                             row = row,
                             period = period,
-                            onClick = { if (row.url != null) onOpenDetail(row) },
-                            onLongClick = { onLongPress(row) }
+                            onClick = { onOpenDetail(row) }
                         )
                     }
                     item { Spacer(Modifier.height(16.dp)) }
@@ -126,10 +131,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWithDivid
 }
 
 @Composable
-private fun BoardSummary(state: BoardUiState, period: Period) {
+private fun BoardSummary(state: BoardUiState, period: Period, platformCount: Int) {
     val start = state.dataStartDay
     val note = when (period) {
-        Period.TODAY -> "实时快照 · 最近同步：${Format.time(state.lastSyncAt)}"
+        Period.TODAY ->
+            "实时快照 · $platformCount 个平台 · 最近同步：${Format.time(state.lastSyncAt)}"
         else -> if (start != null) {
             "数据自 ${Format.date(start)} 起由后台积累，打开 App 越多榜单越完整"
         } else "暂无历史数据，后台同步积累一天后这里会开始有内容"
@@ -151,7 +157,11 @@ private fun BoardSummary(state: BoardUiState, period: Period) {
 }
 
 @Composable
-fun PlatformFilterRow(selectedRoute: String?, onSelect: (String?) -> Unit) {
+fun PlatformFilterRow(
+    platforms: List<PlatformDef>,
+    selectedRoute: String?,
+    onSelect: (String?) -> Unit
+) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -160,7 +170,7 @@ fun PlatformFilterRow(selectedRoute: String?, onSelect: (String?) -> Unit) {
         item {
             FilterChipUi(label = "全部", selected = selectedRoute == null) { onSelect(null) }
         }
-        items(PLATFORMS) { p ->
+        items(platforms) { p ->
             FilterChipUi(label = p.name, selected = selectedRoute == p.route) {
                 onSelect(p.route)
             }
@@ -185,18 +195,19 @@ private fun FilterChipUi(label: String, selected: Boolean, onClick: () -> Unit) 
 
 /**
  * 紧凑榜单行：排名 + 单行标题 + 热度值右对齐。
- * 点击应用内阅读，长按弹出操作菜单。
+ * 点击进入原生话题详情，长按弹出快捷操作。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HotItemRow(
     row: RowUi,
     period: Period,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onClick: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val canonical = HotUrls.canonical(row.url, row.mobileUrl)
+    val brand = platformColor(row.route)
 
     Box {
         Row(
@@ -204,10 +215,7 @@ private fun HotItemRow(
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = {
-                        menuOpen = true
-                        onLongClick()
-                    }
+                    onLongClick = { menuOpen = true }
                 )
                 .padding(horizontal = 4.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -221,11 +229,17 @@ private fun HotItemRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(brand)
+                    )
+                    Spacer(Modifier.width(5.dp))
                     Text(
                         text = if (row.platformCount > 1) "${row.name} 等${row.platformCount}个平台" else row.name,
                         fontSize = 11.sp,
-                        color = if (row.platformCount > 1) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (row.platformCount > 1) MaterialTheme.colorScheme.primary else brand
                     )
                     if (row.hot != null && row.hot > 0) {
                         Spacer(Modifier.width(8.dp))
@@ -248,28 +262,27 @@ private fun HotItemRow(
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text("应用内打开") },
-                enabled = row.url != null,
+                text = { Text("话题详情") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                 onClick = { menuOpen = false; onClick() }
             )
             DropdownMenuItem(
                 text = { Text("复制链接") },
-                enabled = row.url != null,
+                enabled = canonical != null,
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
-                onClick = { menuOpen = false; copyLink(context, row.url) }
+                onClick = { menuOpen = false; copyText(context, "paopao", canonical) }
             )
             DropdownMenuItem(
                 text = { Text("分享") },
-                enabled = row.url != null,
+                enabled = canonical != null,
                 leadingIcon = { Icon(Icons.Filled.Share, null) },
-                onClick = { menuOpen = false; shareLink(context, row) }
+                onClick = { menuOpen = false; shareText(context, row.title, canonical) }
             )
             DropdownMenuItem(
                 text = { Text("浏览器打开") },
-                enabled = row.url != null,
+                enabled = canonical != null,
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
-                onClick = { menuOpen = false; openInBrowser(context, row.url) }
+                onClick = { menuOpen = false; openInBrowser(context, canonical) }
             )
         }
     }

@@ -15,8 +15,8 @@ android {
         applicationId = "com.paopao.hot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.2.2"
+        versionCode = 7
+        versionName = "1.3.0"
     }
 
     signingConfigs {
@@ -97,4 +97,6 @@ dependencies {
 
     // 图片加载
     implementation(libs.coil.compose)
+
+    testImplementation(libs.junit)
 }

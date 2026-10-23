@@ -1,10 +1,11 @@
 package com.paopao.hot.data.repo
 
 import com.paopao.hot.data.api.HotApi
-import com.paopao.hot.data.api.HotItemDto
 import com.paopao.hot.data.db.SnapshotDao
 import com.paopao.hot.data.db.SnapshotEntity
+import com.paopao.hot.data.model.PLATFORMS
 import com.paopao.hot.data.model.PlatformDef
+import com.paopao.hot.util.HotUrls
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -16,9 +17,12 @@ data class HotEntry(
     val name: String,
     val rank: Int,
     val title: String,
-    val desc: String?,
+    val description: String?,
     val url: String?,
-    val hot: Double?
+    val mobileUrl: String?,
+    val cover: String?,
+    val hot: Double?,
+    val timestamp: Long?
 )
 
 /** 周/月聚合条目：一条话题在周期内「上榜天数 / 最佳名次」 */
@@ -26,7 +30,11 @@ data class AggregatedEntry(
     val route: String,
     val name: String,
     val title: String,
+    val description: String?,
     val url: String?,
+    val mobileUrl: String?,
+    val cover: String?,
+    val timestamp: Long?,
     val daysOnBoard: Int,
     val bestRank: Int,
     val latestHot: Double?,
@@ -52,21 +60,35 @@ class HotRepository(
             try {
                 val resp = api.getHot(platform.route)
                 val items = resp.data.take(TOP_N)
+                // 空列表通常意味着实例异常，保留上一次成功的数据
+                if (items.isEmpty()) continue
                 val now = System.currentTimeMillis()
                 val entities = items.mapIndexed { index, dto ->
+                    val url = HotUrls.normalize(dto.url)
+                    val mobileUrl = HotUrls.normalize(dto.mobileUrl) ?: url
                     SnapshotEntity(
                         route = platform.route,
                         name = platform.name,
                         dateEpochDay = day,
                         rank = index + 1,
                         title = dto.title.orEmpty().trim(),
-                        // 部分平台（如知乎）的 mobileUrl 是 zhihu:// 自定义协议，
-                        // WebView 加载不了，优先存 http(s) 链接
-                        url = pickHttpUrl(dto.mobileUrl, dto.url),
+                        description = dto.desc
+                            ?.trim()
+                            ?.replace(HTML_TAG, "")
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.take(MAX_DESC_CHARS),
+                        // 自定义 scheme（zhihu:// 等）统一转成网页版，转不了就置空
+                        url = url ?: mobileUrl,
+                        mobileUrl = mobileUrl ?: url,
+                        cover = HotUrls.normalize(dto.cover),
                         hot = dto.hot,
+                        timestamp = dto.timestamp?.takeIf { it > 0 },
                         fetchedAt = now
                     )
                 }.filter { it.title.isNotEmpty() }
+                if (entities.isEmpty()) continue
+                // 整日替换而不是逐条 upsert：榜单变短时不会残留上一次的高名次旧条目
+                dao.deleteDay(platform.route, day)
                 dao.upsertAll(entities)
                 preferredApiIndex = apis.indexOf(api).coerceAtLeast(0)
                 return true
@@ -77,9 +99,12 @@ class HotRepository(
         return false
     }
 
-    /** 刷新全部平台（并行拉取），返回 route -> 成功与否 */
-    suspend fun refreshAll(day: Long = todayEpochDay()): Map<String, Boolean> = coroutineScope {
-        com.paopao.hot.data.model.PLATFORMS
+    /** 刷新指定平台（并行拉取），返回 route -> 成功与否 */
+    suspend fun refreshAll(
+        platforms: List<PlatformDef> = PLATFORMS,
+        day: Long = todayEpochDay()
+    ): Map<String, Boolean> = coroutineScope {
+        platforms
             .map { p -> async { p.route to refreshPlatform(p, day) } }
             .awaitAll()
             .toMap()
@@ -102,11 +127,19 @@ class HotRepository(
             .groupBy { it.title }
             .map { (_, list) ->
                 val latest = list.maxBy { it.dateEpochDay }
+                // 摘要/封面可能来自更早的快照，尽量保留信息量最大的一条
+                val richest = list
+                    .filter { !it.description.isNullOrBlank() || !it.cover.isNullOrBlank() }
+                    .maxByOrNull { it.dateEpochDay } ?: latest
                 AggregatedEntry(
                     route = latest.route,
                     name = latest.name,
                     title = latest.title,
-                    url = latest.url,
+                    description = richest.description,
+                    url = latest.url ?: richest.url,
+                    mobileUrl = latest.mobileUrl ?: richest.mobileUrl,
+                    cover = richest.cover,
+                    timestamp = latest.timestamp ?: richest.timestamp,
                     daysOnBoard = list.map { it.dateEpochDay }.distinct().size,
                     bestRank = list.minOf { it.rank },
                     latestHot = latest.hot,
@@ -134,34 +167,32 @@ class HotRepository(
         name = name,
         rank = rank,
         title = title,
-        desc = null,
+        description = description,
         url = url,
-        hot = hot
+        mobileUrl = mobileUrl,
+        cover = cover,
+        hot = hot,
+        timestamp = timestamp
     )
 
-    /** 优先返回 http(s) 链接：mobileUrl 若为自定义 scheme 则回落到标准 url */
-    private fun pickHttpUrl(mobileUrl: String?, url: String?): String? = when {
-        com.paopao.hot.util.HotUrls.isHttpUrl(mobileUrl) -> mobileUrl
-        com.paopao.hot.util.HotUrls.isHttpUrl(url) -> url
-        else -> url ?: mobileUrl
-    }
-
     /**
-     * 清洗历史快照里的自定义 scheme 链接（如备用实例曾返回 zhihu://）：
-     * 能转换成网页版链接的就地改写，转不了的置空（条目变为不可点击）。
+     * 清洗历史快照里的脏链接（自定义 scheme、&amp; 转义）：
+     * 能转换成网页版链接的就地改写，转不了的置空（条目变为仅可看摘要）。
      * App 启动时执行一次。
      */
     suspend fun sanitizeLocalUrls() {
-        val bad = dao.getNonHttpUrls()
-        for (row in bad) {
-            val fixed = com.paopao.hot.util.HotUrls.toWebUrl(row.url)
-            dao.updateUrl(row.id, fixed)
+        for (row in dao.getDirtyUrls()) {
+            val url = HotUrls.normalize(row.url)
+            val mobileUrl = HotUrls.normalize(row.mobileUrl) ?: url
+            dao.updateUrls(row.id, url ?: mobileUrl, mobileUrl ?: url)
         }
     }
 
     companion object {
         const val TOP_N = 20
         const val RETENTION_DAYS = 45L
+        private const val MAX_DESC_CHARS = 2000
+        private val HTML_TAG = Regex("<[^>]+>")
 
         fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
 

@@ -30,6 +30,9 @@ data class HotItemDto(
     val desc: String? = null,
     val author: String? = null,
     val hot: Double? = null,
+    val cover: String? = null,
+    /** 话题发布时间（毫秒），部分平台不提供 */
+    val timestamp: Long? = null,
     val url: String? = null,
     val mobileUrl: String? = null
 )
