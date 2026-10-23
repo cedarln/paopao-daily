@@ -14,6 +14,11 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,12 +32,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,14 +50,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -58,7 +63,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,7 +79,7 @@ import com.paopao.hot.ui.ReaderRequest
 import com.paopao.hot.util.HotUrls
 import com.paopao.hot.util.ReaderCss
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -107,14 +111,19 @@ fun WebReaderDialog(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
-
     var webView by remember { mutableStateOf<WebView?>(null) }
     var progress by remember { mutableIntStateOf(0) }
     var failure by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var lastBlockedAt by remember { mutableLongStateOf(0L) }
+    var blockedHint by remember { mutableStateOf(false) }
+    var blockedHintSeq by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(blockedHintSeq) {
+        if (blockedHintSeq == 0) return@LaunchedEffect
+        delay(8_000)
+        blockedHint = false
+    }
 
     val canonical = remember(request) { HotUrls.canonical(request.url, request.mobileUrl) }
 
@@ -137,17 +146,8 @@ fun WebReaderDialog(
         val now = System.currentTimeMillis()
         if (now - lastBlockedAt < 2_000) return
         lastBlockedAt = now
-        scope.launch {
-            val result = snackbar.showSnackbar(
-                message = "已拦截网页跳转第三方 App",
-                actionLabel = "浏览器打开",
-                withDismissAction = true,
-                duration = SnackbarDuration.Long
-            )
-            if (result == SnackbarResult.ActionPerformed) {
-                openInBrowser(context, canonical)
-            }
-        }
+        blockedHint = true
+        blockedHintSeq++
     }
 
     Dialog(
@@ -228,13 +228,81 @@ fun WebReaderDialog(
                     }
                 }
 
-                SnackbarHost(
-                    hostState = snackbar,
+                AnimatedVisibility(
+                    visible = blockedHint,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(12.dp)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    enter = fadeIn() + slideInVertically { it / 3 },
+                    exit = fadeOut() + slideOutVertically { it / 3 }
+                ) {
+                    BlockedHintBar(
+                        onDismiss = { blockedHint = false },
+                        onBrowser = {
+                            blockedHint = false
+                            openInBrowser(context, canonical)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 深链拦截提示条。不用 Snackbar：系统字体放大后「文案 + 操作」挤在一行会超出屏幕，
+ * 这里文案独占一行、按钮另起一行，任何字号都能完整显示。
+ */
+@Composable
+private fun BlockedHintBar(
+    onDismiss: () -> Unit,
+    onBrowser: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 4.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "网页想跳转到第三方 App，已拦截",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    )
+                ) {
+                    Text("知道了")
+                }
+                TextButton(
+                    onClick = onBrowser,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.inversePrimary
+                    )
+                ) {
+                    Text("用浏览器打开")
+                }
             }
         }
     }
