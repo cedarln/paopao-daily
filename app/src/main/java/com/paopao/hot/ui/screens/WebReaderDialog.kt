@@ -39,11 +39,14 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +54,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,6 +67,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +80,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.paopao.hot.data.Settings
 import com.paopao.hot.ui.ReaderRequest
 import com.paopao.hot.util.HotUrls
 import com.paopao.hot.util.ReaderCss
@@ -108,6 +114,12 @@ private sealed interface ReaderTargetState {
 @Composable
 fun WebReaderDialog(
     request: ReaderRequest,
+    readerFontPercent: Int,
+    readerDark: Boolean,
+    readerNoImages: Boolean,
+    onFontPercentChange: (Int) -> Unit,
+    onReaderDarkChange: (Boolean) -> Unit,
+    onReaderNoImagesChange: (Boolean) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -115,6 +127,7 @@ fun WebReaderDialog(
     var progress by remember { mutableIntStateOf(0) }
     var failure by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var prefsOpen by remember { mutableStateOf(false) }
     var lastBlockedAt by remember { mutableLongStateOf(0L) }
     var blockedHint by remember { mutableStateOf(false) }
     var blockedHintSeq by remember { mutableIntStateOf(0) }
@@ -123,6 +136,14 @@ fun WebReaderDialog(
         if (blockedHintSeq == 0) return@LaunchedEffect
         delay(8_000)
         blockedHint = false
+    }
+
+    // 字号与网页样式可实时调整，不需要重新加载页面
+    LaunchedEffect(webView, readerFontPercent) {
+        webView?.settings?.textZoom = readerFontPercent
+    }
+    LaunchedEffect(webView, readerDark, readerNoImages) {
+        webView?.evaluateJavascript(prefsScript(readerDark, readerNoImages), null)
     }
 
     val canonical = remember(request) { HotUrls.canonical(request.url, request.mobileUrl) }
@@ -170,6 +191,7 @@ fun WebReaderDialog(
                         refreshEnabled = targetState is ReaderTargetState.Ready,
                         onCopy = { copyText(context, "paopao", canonical) },
                         onBrowser = { openInBrowser(context, canonical) },
+                        onReaderSettings = { prefsOpen = true },
                         menuOpen = menuOpen,
                         onMenuOpenChange = { menuOpen = it }
                     )
@@ -199,6 +221,9 @@ fun WebReaderDialog(
                             is ReaderTargetState.Ready -> key(state.target.url) {
                                 ReaderWebView(
                                     target = state.target,
+                                    fontPercent = readerFontPercent,
+                                    dark = readerDark,
+                                    noImages = readerNoImages,
                                     onReady = { webView = it },
                                     onProgress = { progress = it },
                                     onStart = {
@@ -248,6 +273,97 @@ fun WebReaderDialog(
             }
         }
     }
+
+    if (prefsOpen) {
+        AlertDialog(
+            onDismissRequest = { prefsOpen = false },
+            title = { Text("阅读设置") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "正文字号",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Settings.READER_FONT_CHOICES.forEach { percent ->
+                                FilterChip(
+                                    selected = percent == readerFontPercent,
+                                    onClick = { onFontPercentChange(percent) },
+                                    label = {
+                                        Text(
+                                            "$percent%",
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("深色网页", fontSize = 15.sp)
+                            Text(
+                                "夜间阅读时反转页面配色",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = readerDark,
+                            onCheckedChange = onReaderDarkChange
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("隐藏图片", fontSize = 15.sp)
+                            Text(
+                                "只保留文字，省流量也更快",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = readerNoImages,
+                            onCheckedChange = onReaderNoImagesChange
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { prefsOpen = false }) { Text("完成") }
+            }
+        )
+    }
+}
+
+/** 把阅读偏好写进独立 style 标签，开关切换不需要重新加载页面 */
+private fun prefsScript(dark: Boolean, noImages: Boolean): String {
+    val css = ReaderCss.prefsCss(dark, noImages)
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "")
+    return """
+        (function() {
+          var id = 'paopao-reader-prefs';
+          var style = document.getElementById(id);
+          if (!style) {
+            style = document.createElement('style');
+            style.id = id;
+            (document.head || document.documentElement).appendChild(style);
+          }
+          style.textContent = '$css';
+        })();
+    """.trimIndent()
 }
 
 /**
@@ -316,6 +432,7 @@ private fun ReaderTopBar(
     refreshEnabled: Boolean,
     onCopy: () -> Unit,
     onBrowser: () -> Unit,
+    onReaderSettings: () -> Unit,
     menuOpen: Boolean,
     onMenuOpenChange: (Boolean) -> Unit
 ) {
@@ -353,6 +470,14 @@ private fun ReaderTopBar(
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenuOpenChange(false) }) {
                 DropdownMenuItem(
+                    text = { Text("阅读设置") },
+                    leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                    onClick = {
+                        onMenuOpenChange(false)
+                        onReaderSettings()
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text("复制链接") },
                     leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
                     onClick = {
@@ -377,6 +502,9 @@ private fun ReaderTopBar(
 @Composable
 private fun ReaderWebView(
     target: HotUrls.WebTarget,
+    fontPercent: Int,
+    dark: Boolean,
+    noImages: Boolean,
     onReady: (WebView) -> Unit,
     onProgress: (Int) -> Unit,
     onStart: () -> Unit,
@@ -384,6 +512,8 @@ private fun ReaderWebView(
     onBlocked: () -> Unit
 ) {
     val context = LocalContext.current
+    val currentDark by rememberUpdatedState(dark)
+    val currentNoImages by rememberUpdatedState(noImages)
 
     val webView = remember(target.url) {
         WebView(context).apply {
@@ -406,6 +536,7 @@ private fun ReaderWebView(
                 setSupportMultipleWindows(false)
                 allowFileAccess = false
                 allowContentAccess = false
+                textZoom = fontPercent
                 userAgentString = if (target.desktop) DESKTOP_UA else MOBILE_UA
             }
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -440,7 +571,9 @@ private fun ReaderWebView(
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    if (view != null && url != null) injectReaderCleanup(view, url)
+                    if (view != null && url != null) {
+                        injectReaderCleanup(view, url, currentDark, currentNoImages)
+                    }
                 }
 
                 override fun onReceivedError(
@@ -511,8 +644,8 @@ private fun ReaderWebView(
     )
 }
 
-/** 只留正文：隐藏站点顶栏、App 下载/打开横幅 */
-private fun injectReaderCleanup(webView: WebView, url: String) {
+/** 只留正文：隐藏站点顶栏、App 下载/打开横幅，并应用阅读偏好 */
+private fun injectReaderCleanup(webView: WebView, url: String, dark: Boolean, noImages: Boolean) {
     val css = ReaderCss.forUrl(url)
         .replace("\\", "\\\\")
         .replace("'", "\\'")
@@ -529,6 +662,7 @@ private fun injectReaderCleanup(webView: WebView, url: String) {
           }
           style.textContent = '$css';
         })();
+        ${prefsScript(dark, noImages)}
         ${ReaderCss.cleanupScript()}
     """.trimIndent()
     webView.evaluateJavascript(js, null)

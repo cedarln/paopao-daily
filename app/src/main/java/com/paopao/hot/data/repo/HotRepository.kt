@@ -1,6 +1,8 @@
 package com.paopao.hot.data.repo
 
 import com.paopao.hot.data.api.HotApi
+import com.paopao.hot.data.db.FavoriteDao
+import com.paopao.hot.data.db.FavoriteEntity
 import com.paopao.hot.data.db.SnapshotDao
 import com.paopao.hot.data.db.SnapshotEntity
 import com.paopao.hot.data.model.PLATFORMS
@@ -22,7 +24,9 @@ data class HotEntry(
     val mobileUrl: String?,
     val cover: String?,
     val hot: Double?,
-    val timestamp: Long?
+    val timestamp: Long?,
+    /** 条目所属快照日期，仅搜索结果需要 */
+    val epochDay: Long? = null
 )
 
 /** 周/月聚合条目：一条话题在周期内「上榜天数 / 最佳名次」 */
@@ -43,7 +47,8 @@ data class AggregatedEntry(
 
 class HotRepository(
     private val apiProvider: () -> List<HotApi>,
-    private val dao: SnapshotDao
+    private val dao: SnapshotDao,
+    private val favoriteDao: FavoriteDao
 ) {
 
     /** 上次成功的 API 实例下标，粘性优先复用，减少无谓的失败重试 */
@@ -157,6 +162,26 @@ class HotRepository(
     suspend fun earliestDay(): Long? = dao.earliestDay()
     suspend fun clearAll() = dao.clearAll()
 
+    /** 指定日期各话题的最佳名次，用于「较昨日」趋势；按标题聚合以适配跨平台合并视图 */
+    suspend fun bestRankByTitle(day: Long): Map<String, Int> =
+        dao.ranksOfDay(day)
+            .groupBy { it.title }
+            .mapValues { (_, list) -> list.minOf { it.rank } }
+
+    /** 某天的完整榜单（历史回看用） */
+    suspend fun dayEntries(day: Long): List<HotEntry> = dao.getRange(day, day).map { it.toEntry() }
+
+    /** 全量历史搜索：跨所有保留日期按标题模糊匹配 */
+    suspend fun search(keyword: String, limit: Int = 200): List<HotEntry> =
+        dao.search(keyword, limit).map { it.toEntry() }
+
+    // ---- 收藏 ----
+
+    suspend fun favorites(): List<FavoriteEntity> = favoriteDao.all()
+    suspend fun favoriteKeys(): Set<String> = favoriteDao.keys().toSet()
+    suspend fun saveFavorite(item: FavoriteEntity) = favoriteDao.upsert(item)
+    suspend fun removeFavorite(key: String) = favoriteDao.delete(key)
+
     /** 只保留最近 45 天快照，防止库无限膨胀 */
     suspend fun trim() {
         dao.trimBefore(todayEpochDay() - RETENTION_DAYS)
@@ -172,7 +197,8 @@ class HotRepository(
         mobileUrl = mobileUrl,
         cover = cover,
         hot = hot,
-        timestamp = timestamp
+        timestamp = timestamp,
+        epochDay = dateEpochDay
     )
 
     /**

@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -72,11 +73,11 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "设置",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
+        // 外观
+        AppearanceCard(settings = settings, viewModel = viewModel)
+
+        // 列表显示
+        ListDisplayCard(settings = settings, viewModel = viewModel)
 
         // 平台订阅
         PlatformSubscriptionCard(settings = settings, viewModel = viewModel)
@@ -154,7 +155,8 @@ fun SettingsScreen(
                     "泡泡热榜 · 开源项目（github.com/cedarln/${UpdateChecker.REPO}）\n\n" +
                         "· 数据聚合基于开源项目 DailyHotApi（GPL-3.0），感谢原作者 imsyy 与社区维护者\n" +
                         "· 点击条目先看原生摘要，点「阅读原文」才会加载网页\n" +
-                        "· 阅读器会拦截平台 App 深链，并隐藏站点顶栏和下载横幅\n" +
+                        "· 阅读器会拦截平台 App 深链，并隐藏站点顶栏和下载横幅；字号、深色网页、隐藏图片都可在阅读器菜单里调整\n" +
+                        "· 收藏、已读标记和浏览历史只存在本机；搜索覆盖最近 45 天的全部快照\n" +
                         "· 网页体验不佳的平台，可在上方「平台订阅」中关闭\n" +
                         "· 小红书暂无公开热榜接口，后续版本视可行方案支持\n" +
                         "· 榜单内容版权归各平台所有，仅供个人阅读参考\n" +
@@ -182,6 +184,100 @@ fun SettingsScreen(
                 TextButton(onClick = { showClearDialog = false }) { Text("取消") }
             }
         )
+    }
+}
+
+// ---------- 外观 ----------
+
+@Composable
+private fun AppearanceCard(settings: Settings, viewModel: MainViewModel) {
+    val dynamicSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("外观", fontWeight = FontWeight.SemiBold)
+            Text(
+                "选择浅色或深色界面；跟随系统时随系统深色模式自动切换",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Settings.THEME_SYSTEM to "跟随系统",
+                    Settings.THEME_LIGHT to "浅色",
+                    Settings.THEME_DARK to "深色"
+                ).forEach { (mode, label) ->
+                    FilterChip(
+                        selected = settings.themeMode == mode,
+                        onClick = { viewModel.setThemeMode(mode) },
+                        label = { Text(label, fontSize = 12.sp) }
+                    )
+                }
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("动态取色", fontSize = 15.sp)
+                    Text(
+                        if (dynamicSupported) "Android 12+ 跟随系统壁纸配色"
+                        else "当前系统版本不支持，将使用品牌靛蓝配色",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.dynamicColor && dynamicSupported,
+                    enabled = dynamicSupported,
+                    onCheckedChange = { viewModel.setDynamicColor(it) }
+                )
+            }
+        }
+    }
+}
+
+// ---------- 列表显示 ----------
+
+@Composable
+private fun ListDisplayCard(settings: Settings, viewModel: MainViewModel) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("榜单列表", fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("显示封面缩略图", fontSize = 15.sp)
+                    Text(
+                        "摘要自带封面时在标题右侧显示小图，流量紧张可以关掉",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.showCovers,
+                    onCheckedChange = { viewModel.setShowCovers(it) }
+                )
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("紧凑模式", fontSize = 15.sp)
+                    Text(
+                        "减小行高并隐藏封面，一屏能多看好几条",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.compactRows,
+                    onCheckedChange = { viewModel.setCompactRows(it) }
+                )
+            }
+        }
     }
 }
 

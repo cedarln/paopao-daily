@@ -96,6 +96,30 @@ object ReaderCss {
         return BASE + extra
     }
 
+    /**
+     * 阅读偏好样式：深色阅读用反色滤镜，图片/视频再反色一次还原；
+     * 无图模式直接隐藏媒体元素。由阅读器以独立 style 注入，可随开关实时替换。
+     */
+    fun prefsCss(dark: Boolean, noImages: Boolean): String = buildString {
+        if (dark) {
+            append(
+                """
+                html {
+                    background: #12151b !important;
+                    filter: invert(90%) hue-rotate(180deg) !important;
+                }
+                img, video, svg, canvas, picture {
+                    filter: invert(1) hue-rotate(180deg) !important;
+                }
+                """.trimIndent()
+            )
+            append("\n")
+        }
+        if (noImages) {
+            append("img, video, svg, canvas, picture, [style*=\"background-image\"] { display: none !important; }")
+        }
+    }
+
     /** 通用：下载/打开 App 的横幅、引导层、浮动按钮 */
     private val BASE = """
         [class*="app-download" i], [id*="app-download" i],

@@ -25,6 +25,8 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -67,6 +69,8 @@ import com.paopao.hot.util.HotUrls
 @Composable
 fun HotDetailDialog(
     row: RowUi,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClose: () -> Unit,
     onReadOriginal: (title: String, mobileUrl: String?, url: String?) -> Unit
 ) {
@@ -103,6 +107,8 @@ fun HotDetailDialog(
         ) {
             Column(Modifier.fillMaxSize()) {
                 DetailTopBar(
+                    isFavorite = isFavorite,
+                    onToggleFavorite = onToggleFavorite,
                     onClose = onClose,
                     onCopy = { copyText(context, "paopao", fallbackUrl) },
                     onShare = { shareText(context, row.title, fallbackUrl) }
@@ -214,6 +220,8 @@ fun HotDetailDialog(
 
 @Composable
 private fun DetailTopBar(
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClose: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit
@@ -235,6 +243,15 @@ private fun DetailTopBar(
             fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.weight(1f))
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                contentDescription = if (isFavorite) "取消收藏" else "收藏",
+                tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
         IconButton(onClick = onCopy) {
             Icon(Icons.Filled.ContentCopy, contentDescription = "复制链接", modifier = Modifier.size(20.dp))
         }
@@ -264,6 +281,13 @@ private fun MetaFlow(row: RowUi, source: RowSource?, brand: Color) {
         }
         if (hot != null && hot > 0) {
             MetaPill("热度 ${Format.hot(hot)}", MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        when {
+            row.isNew -> MetaPill("今日新上榜", MaterialTheme.colorScheme.primary)
+            row.trend != null && row.trend > 0 ->
+                MetaPill("较昨日 ↑${row.trend}", MaterialTheme.colorScheme.primary)
+            row.trend != null && row.trend < 0 ->
+                MetaPill("较昨日 ↓${-row.trend}", MaterialTheme.colorScheme.error)
         }
         if (row.platformCount > 1) {
             MetaPill("${row.platformCount} 个平台在榜", MaterialTheme.colorScheme.primary)

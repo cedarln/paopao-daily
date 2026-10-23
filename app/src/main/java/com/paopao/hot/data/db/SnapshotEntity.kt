@@ -31,11 +31,27 @@ data class SnapshotEntity(
     val fetchedAt: Long
 )
 
+/** 名次投影：计算「较昨日」趋势只需要这几个字段 */
+data class RankSnapshot(
+    val route: String,
+    val title: String,
+    val rank: Int
+)
+
 @Dao
 interface SnapshotDao {
 
     @Upsert
     suspend fun upsertAll(items: List<SnapshotEntity>)
+
+    @Query("SELECT route, title, rank FROM snapshots WHERE dateEpochDay = :day")
+    suspend fun ranksOfDay(day: Long): List<RankSnapshot>
+
+    @Query(
+        "SELECT * FROM snapshots WHERE title LIKE '%' || :keyword || '%' " +
+            "ORDER BY dateEpochDay DESC, rank ASC LIMIT :limit"
+    )
+    suspend fun search(keyword: String, limit: Int): List<SnapshotEntity>
 
     @Query("DELETE FROM snapshots WHERE route = :route AND dateEpochDay = :day")
     suspend fun deleteDay(route: String, day: Long)

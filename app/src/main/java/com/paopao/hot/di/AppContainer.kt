@@ -31,7 +31,8 @@ class AppContainer(context: Context) {
     @Volatile
     private var apiList: List<HotApi> = buildApiList(currentBaseUrl)
 
-    val repository: HotRepository = HotRepository({ apiList }, db.snapshotDao())
+    val repository: HotRepository =
+        HotRepository({ apiList }, db.snapshotDao(), db.favoriteDao())
 
     init {
         // 启动时读取用户自定义 API 地址（DataStore 首读很快，阻塞可接受）

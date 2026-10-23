@@ -19,6 +19,12 @@ internal fun copyText(context: Context, label: String, text: String?) {
 
 internal fun shareText(context: Context, title: String, url: String?) {
     val text = if (url.isNullOrBlank()) title else "$title\n$url"
+    shareRaw(context, text)
+}
+
+/** 分享一段已经排好版的纯文本（如今日速览），不再拼接标题 */
+internal fun shareRaw(context: Context, text: String) {
+    if (text.isBlank()) return
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)
